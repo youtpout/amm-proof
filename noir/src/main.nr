@@ -37,7 +37,7 @@ fn test_main() {
 fn test_secret() {
     let secret0= 1337;
     let secret1: Field = 42;
-    let expected_secret: Field = std::hash::hash_to_field([12, 42]);
+    let expected_secret: Field = std::hash::hash_to_field([secret0, secret1]);
 
     let user: Field = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     let once: Field = 1;
@@ -46,13 +46,13 @@ fn test_secret() {
 
     let coupon: Field = std::hash::hash_to_field([user, once, fee, expected_secret]);
 
-    main(coupon, user, once, fee, secret0, secret1);
+    main(coupon, user, once, fee, 12, secret1);
 
 }
 
 
 #[test(should_fail_with = "Incorrect coupon")]
-fn test_scoupon() {
+fn test_coupon() {
     let secret0= 1337;
     let secret1: Field = 42;
     let expected_secret: Field = std::hash::hash_to_field([13377, 42]);
