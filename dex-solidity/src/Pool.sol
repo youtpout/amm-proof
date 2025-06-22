@@ -1,26 +1,51 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-// inspired by simple amm sample https://www.cyfrin.io/glossary/constant-product-amm-solidity-code-example
-contract Pool {
+interface IERC20 {
+    function totalSupply() external view returns (uint256);
+    function balanceOf(address account) external view returns (uint256);
+    function transfer(
+        address recipient,
+        uint256 amount
+    ) external returns (bool);
+    function allowance(
+        address owner,
+        address spender
+    ) external view returns (uint256);
+    function approve(address spender, uint256 amount) external returns (bool);
+    function transferFrom(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) external returns (bool);
+}
+
+// inspired by simple amm sample from cyfrin io
+contract Pool is IERC20 {
+    string public constant name = "Pool Proof Liquidity";
+    string public constant symbol = "PoolProof";
+    uint8 public constant decimals = 18;
+
     IERC20 public immutable token0;
     IERC20 public immutable token1;
-
-    struct PayedFee {
-        uint256 token0Fee;
-        uint256 token1Fee;
-        bool redeemed;
-    }
 
     uint256 public reserve0;
     uint256 public reserve1;
 
     uint256 public totalSupply;
     mapping(address => uint256) public balanceOf;
-    mapping(address => uint256) public allowance;
+    mapping(address => mapping(address => uint256)) public allowance;
 
-    mapping(address => PayedFee) public userPayedFee;
     mapping(address => uint256) public reduceFee;
+
+    bytes32 root = 0x0;
+
+    event Approval(
+        address indexed owner,
+        address indexed spender,
+        uint256 value
+    );
+    event Transfer(address indexed from, address indexed to, uint256 value);
 
     constructor(address _token0, address _token1) {
         token0 = IERC20(_token0);
@@ -30,11 +55,13 @@ contract Pool {
     function _mint(address _to, uint256 _amount) private {
         balanceOf[_to] += _amount;
         totalSupply += _amount;
+        emit Transfer(address(0), _to, _amount);
     }
 
     function _burn(address _from, uint256 _amount) private {
         balanceOf[_from] -= _amount;
         totalSupply -= _amount;
+        emit Transfer(_from, address(0), _amount);
     }
 
     function _update(uint256 _reserve0, uint256 _reserve1) private {
@@ -42,7 +69,11 @@ contract Pool {
         reserve1 = _reserve1;
     }
 
-    function addEternalCoupon(bytes32 coupon, address user, uint256 fee) external {
+    function addEternalCoupon(
+        bytes32 coupon,
+        address user,
+        uint256 fee
+    ) external {
         require(user != address(0), "invalid user");
         require(fee > 0 && fee < 500, "invalid fee");
         reduceFee[user] = fee;
@@ -80,18 +111,7 @@ contract Pool {
             : 100_000 - defaultFee;
 
         uint256 amountInWithFee = (_amountIn * feeCalculated) / 100_000;
-        uint256 feePayed = _amountIn - amountInWithFee;
 
-        if (!isReduceFee) {
-            // if they are not reduced fee we store fee to reimboursed later
-            PayedFee memory payedFee = userPayedFee[msg.sender];
-            PayedFee memory totalFeePayed = PayedFee(
-                isToken0 ? payedFee.token0Fee + feePayed : payedFee.token0Fee,
-                !isToken0 ? payedFee.token1Fee + feePayed : payedFee.token1Fee,
-                false
-            );
-            userPayedFee[msg.sender] = totalFeePayed;
-        }
         amountOut =
             (reserveOut * amountInWithFee) /
             (reserveIn + amountInWithFee);
@@ -152,6 +172,39 @@ contract Pool {
         token1.transfer(msg.sender, amount1);
     }
 
+    function _approve(address owner, address spender, uint value) private {
+        allowance[owner][spender] = value;
+        emit Approval(owner, spender, value);
+    }
+
+    function _transfer(address from, address to, uint value) private {
+        balanceOf[from] = balanceOf[from] - value;
+        balanceOf[to] = balanceOf[to] + value;
+        emit Transfer(from, to, value);
+    }
+
+    function approve(address spender, uint value) external returns (bool) {
+        _approve(msg.sender, spender, value);
+        return true;
+    }
+
+    function transfer(address to, uint value) external returns (bool) {
+        _transfer(msg.sender, to, value);
+        return true;
+    }
+
+    function transferFrom(
+        address from,
+        address to,
+        uint value
+    ) external returns (bool) {
+        if (allowance[from][msg.sender] != type(uint256).max) {
+            allowance[from][msg.sender] = allowance[from][msg.sender] - value;
+        }
+        _transfer(from, to, value);
+        return true;
+    }
+
     function _sqrt(uint256 y) private pure returns (uint256 z) {
         if (y > 3) {
             z = y;
@@ -168,23 +221,4 @@ contract Pool {
     function _min(uint256 x, uint256 y) private pure returns (uint256) {
         return x <= y ? x : y;
     }
-}
-
-interface IERC20 {
-    function totalSupply() external view returns (uint256);
-    function balanceOf(address account) external view returns (uint256);
-    function transfer(
-        address recipient,
-        uint256 amount
-    ) external returns (bool);
-    function allowance(
-        address owner,
-        address spender
-    ) external view returns (uint256);
-    function approve(address spender, uint256 amount) external returns (bool);
-    function transferFrom(
-        address sender,
-        address recipient,
-        uint256 amount
-    ) external returns (bool);
 }

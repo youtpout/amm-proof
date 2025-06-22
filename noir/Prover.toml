@@ -1,0 +1,6 @@
+coupon = "0x1ad63881a07c5d09e34833aaf1cbdff85e3fc7a72808385272e0e17c8a54e087"
+user = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+once = "1"
+fee = "200"
+secret0 = "1337"
+secret1 = "42"

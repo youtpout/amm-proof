@@ -13,6 +13,7 @@ fn main(
     assert(hash_secret == expected_secret, "Incorrect secret");
 
     let hash_data: Field = std::hash::hash_to_field([user, once, fee, expected_secret]);
+    println(hash_data);
     assert(hash_data == coupon, "Incorrect coupon");
 }
 
