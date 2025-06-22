@@ -21,4 +21,12 @@ contract CounterTest is Test {
         counter.setNumber(x);
         assertEq(counter.number(), x);
     }
+
+     function testHash() public {
+        bytes32  PROVING_SYSTEM_ID = keccak256(abi.encodePacked("ultraplonk"));
+        bytes32  VERSION_HASH = sha256(abi.encodePacked(""));
+       bytes32 leaf = keccak256(abi.encodePacked(PROVING_SYSTEM_ID, vkey, VERSION_HASH, keccak256(abi.encodePacked(_hash))));
+
+        assertEq(counter.number(), x);
+    }
 }
