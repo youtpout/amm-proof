@@ -20,6 +20,17 @@ interface IERC20 {
     ) external returns (bool);
 }
 
+interface IVerifyProofAggregation {
+    function verifyProofAggregation(
+        uint256 _domainId,
+        uint256 _aggregationId,
+        bytes32 _leaf,
+        bytes32[] calldata _merklePath,
+        uint256 _leafCount,
+        uint256 _index
+    ) external view returns (bool);
+}
+
 // Implement merkle tree history based on tornado cash
 // The ppol is inspired by amm sample from cyfrin io
 contract Pool is IERC20 {
@@ -37,15 +48,22 @@ contract Pool is IERC20 {
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
 
-    uint32 public levels;
+    address public owner;
 
-    // filledSubtrees and roots could be bytes32[size], but using mappings makes it cheaper because
-    // it removes index range check on every interaction
-    mapping(uint256 => bytes32) public filledSubtrees;
-    mapping(uint256 => bytes32) public roots;
-    uint32 public constant ROOT_HISTORY_SIZE = 30;
-    uint256 public currentRootIndex = 0;
-    uint256 public nextIndex = 0;
+    bytes32 public root = bytes32(0);
+
+    bytes32 public constant PROVING_SYSTEM_ID =
+        keccak256(abi.encodePacked("ultraplonk"));
+
+    bytes32 public constant VERSION_HASH = sha256(abi.encodePacked(""));
+
+    // zkVerify contract
+    address public zkVerify;
+
+    // vkey for our circuit
+    bytes32 public vkey;
+
+    mapping(address => bool) public haveCoupon;
 
     event Approval(
         address indexed owner,
@@ -54,19 +72,24 @@ contract Pool is IERC20 {
     );
     event Transfer(address indexed from, address indexed to, uint256 value);
 
-    constructor(address _token0, address _token1, uint32 _levels) {
+    constructor(
+        address _token0,
+        address _token1,
+        address _zkVerify,
+        bytes32 _vkey
+    ) {
         token0 = IERC20(_token0);
         token1 = IERC20(_token1);
 
-        require(_levels > 0, "_levels should be greater than zero");
-        require(_levels < 8, "_levels should be less than 32");
-        levels = _levels;
+        owner = msg.sender;
+        zkVerify = _zkVerify;
+        vkey = _vkey;
+    }
 
-        for (uint32 i = 0; i < _levels; i++) {
-            filledSubtrees[i] = _zeros(i);
-        }
-
-        roots[0] = _zeros(_levels - 1);
+    // due to limited hackathon time I just set the root without verification
+    function setRoot(bytes32 _root) external {
+        require(msg.sender == owner, "not owner");
+        root = _root;
     }
 
     function _mint(address _to, uint256 _amount) private {
@@ -86,10 +109,45 @@ contract Pool is IERC20 {
         reserve1 = _reserve1;
     }
 
+    function registerCoupon(
+        address _user,
+        bytes32 _hash,
+        uint256 _domainId,
+        uint256 _aggregationId,
+        bytes32[] calldata _merklePath,
+        uint256 _leafCount,
+        uint256 _index
+    ) external {
+        require(!haveCoupon[_user], "already have coupon");
+        require(_hash != bytes32(0), "hash = 0");
+
+        bytes32 leaf = keccak256(
+            abi.encodePacked(
+                PROVING_SYSTEM_ID,
+                vkey,
+                VERSION_HASH,
+                keccak256(abi.encodePacked(_hash))
+            )
+        );
+
+        require(
+            IVerifyProofAggregation(zkVerify).verifyProofAggregation(
+                _domainId,
+                _aggregationId,
+                leaf,
+                _merklePath,
+                _leafCount,
+                _index
+            ),
+            "Invalid proof"
+        );
+
+        haveCoupon[_user] = true;
+    }
+
     function swap(
         address _tokenIn,
-        uint256 _amountIn,
-        bytes32 _coupon
+        uint256 _amountIn
     ) external returns (uint256 amountOut) {
         require(
             _tokenIn == address(token0) || _tokenIn == address(token1),
@@ -111,12 +169,12 @@ contract Pool is IERC20 {
 
         // 0.5% fee
         uint256 appliedFees = 500;
-        if(_coupon!=bytes32(0)) {
+        if (haveCoupon[msg.sender]) {
             // with coupon, we apply a 0.20% fee
-           appliedFees+= 200;
+            appliedFees += 200;
         }
-       
-        uint256 feeCalculated =  100_000 - appliedFees;
+
+        uint256 feeCalculated = 100_000 - appliedFees;
 
         uint256 amountInWithFee = (_amountIn * feeCalculated) / 100_000;
 
@@ -229,122 +287,5 @@ contract Pool is IERC20 {
 
     function _min(uint256 x, uint256 y) private pure returns (uint256) {
         return x <= y ? x : y;
-    }
-
-    // merkle tree functions
-    function _insert(bytes32 _leaf) internal returns (uint256 index) {
-        uint256 _nextIndex = nextIndex;
-        require(
-            _nextIndex != uint32(2) ** levels,
-            "Merkle tree is full. No more leaves can be added"
-        );
-        uint256 currentIndex = _nextIndex;
-        bytes32 currentLevelHash = _leaf;
-        bytes32 left;
-        bytes32 right;
-
-        for (uint32 i = 0; i < levels; i++) {
-            if (currentIndex % 2 == 0) {
-                left = currentLevelHash;
-                right = _zeros(i);
-                filledSubtrees[i] = currentLevelHash;
-            } else {
-                left = filledSubtrees[i];
-                right = currentLevelHash;
-            }
-            currentLevelHash = _hashLeftRight(left, right);
-            currentIndex /= 2;
-        }
-
-        uint256 newRootIndex = (currentRootIndex + 1) % ROOT_HISTORY_SIZE;
-        currentRootIndex = newRootIndex;
-        roots[newRootIndex] = currentLevelHash;
-        nextIndex = _nextIndex + 1;
-        return _nextIndex;
-    }
-
-    /**
-    @dev Whether the root is present in the root history
-    */
-    function isKnownRoot(bytes32 _root) public view returns (bool) {
-        if (_root == 0) {
-            return false;
-        }
-        uint256 _currentRootIndex = currentRootIndex;
-        uint256 i = _currentRootIndex;
-        do {
-            if (_root == roots[i]) {
-                return true;
-            }
-            if (i == 0) {
-                i = ROOT_HISTORY_SIZE;
-            }
-            i--;
-        } while (i != _currentRootIndex);
-        return false;
-    }
-
-    /**
-    @dev Returns the last root
-    */
-    function getLastRoot() public view returns (bytes32) {
-        return roots[currentRootIndex];
-    }
-
-    /**
-    @dev Hash 2 tree leaves
-    */
-    function _hashLeftRight(
-        bytes32 _left,
-        bytes32 _right
-    ) private pure returns (bytes32 value) {
-        bytes memory data = abi.encode(_left, _right);
-        value = sha256(data);
-    }
-
-    /// @dev provides Zero (Empty) elements for a poseidon MerkleTree based on sha256
-    function _zeros(uint256 i) private pure returns (bytes32) {
-        if (i == 0) return bytes32(0);
-        else if (i == 1)
-            return
-                bytes32(
-                    0xf5a5fd42d16a20302798ef6ed309979b43003d2320d9f0e8ea9831a92759fb4b
-                );
-        else if (i == 2)
-            return
-                bytes32(
-                    0xdb56114e00fdd4c1f85c892bf35ac9a89289aaecb1ebd0a96cde606a748b5d71
-                );
-        else if (i == 3)
-            return
-                bytes32(
-                    0xc78009fdf07fc56a11f122370658a353aaa542ed63e44c4bc15ff4cd105ab33c
-                );
-        else if (i == 4)
-            return
-                bytes32(
-                    0x536d98837f2dd165a55d5eeae91485954472d56f246df256bf3cae19352a123c
-                );
-        else if (i == 5)
-            return
-                bytes32(
-                    0x9efde052aa15429fae05bad4d0b1d7c64da64d03d7a1854a588c2cb8430c0d30
-                );
-        else if (i == 6)
-            return
-                bytes32(
-                    0xd88ddfeed400a8755596b21942c1497e114c302e6118290f91e6772976041fa1
-                );
-        else if (i == 7)
-            return
-                bytes32(
-                    0x87eb0ddba57e35f6d286673802a4af5975e22506c7cf4c64bb6be5ee11527f2c
-                );
-        else if (i == 8)
-            return
-                bytes32(
-                    0x26846476fd5fc54a5d43385167c95144f2643f533cc85bb9d16b782f8d7db193
-                );
-        else revert("Index out of bounds");
     }
 }

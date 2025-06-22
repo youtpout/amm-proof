@@ -2,9 +2,11 @@ use dep::std::{self};
 
 fn main(
     coupon: pub Field,
+    root: pub Field,
     user: pub Field,
-    once: pub Field,
-    fee: pub Field,
+    // for hackathon we pass the requester, in real scenario we need to veirify the requester by signature
+    requester:  Field,
+    witness:  Field,
     secret0: Field,
     secret1: Field,
 ) {
@@ -12,7 +14,7 @@ fn main(
     let expected_secret: Field = 0x29cc38a38450970d467f7e60428805a67bd687eff454e0cf8ef773ae2c210fe7;
     assert(hash_secret == expected_secret, "Incorrect secret");
 
-    let hash_data: Field = std::hash::hash_to_field([user, once, fee, expected_secret]);
+    let hash_data: Field = std::hash::hash_to_field([user,  expected_secret]);
     println(hash_data);
     assert(hash_data == coupon, "Incorrect coupon");
 }
