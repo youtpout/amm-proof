@@ -5,8 +5,8 @@ import { UltraPlonkBackend } from '@aztec/bb.js';
 import { abi, Noir } from '@noir-lang/noir_js';
 
 export default function ProofComponent() {
-  const [x, setX] = useState('');
-  const [y, setY] = useState('');
+  const [root, setRoot] = useState('');
+  const [user, setUser] = useState('');
   const [result, setResult] = useState('');
 
   const [isLoading, setIsLoading] = useState(false);
@@ -14,6 +14,7 @@ export default function ProofComponent() {
   const [errorMsg, setErrorMsg] = useState('');
   const [verificationStatus, setVerificationStatus] = useState('');
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [data, setData] = useState<string | null>(null);
 
   const handleGenerateProof = async () => {
     setIsLoading(true);
@@ -24,26 +25,28 @@ export default function ProofComponent() {
 
     try {
 
-        const circuit_json = await fetch("/noir/target/noir.json")
-        const noir_data = await circuit_json.json();
+      const circuit_json = await fetch("/noir/target/noir.json")
+      const noir_data = await circuit_json.json();
 
-        const input = {
-            "x": x,
-            "y": y,
-            "z": result
-        }
-        const noir = new Noir({ bytecode: noir_data.bytecode, abi: noir_data.abi as any });
-        const execResult = await noir.execute(input);
-        console.log("Witness Generated:", execResult);
+      const input = {
+        "root": root,
+        "user": user,
+        "requester": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        "index": "0",
+        "witness": ["0x00", "0x27b1d0839a5b23baf12a8d195b18ac288fcf401afb2f70b8a4b529ede5fa9fed", "0x21dbfd1d029bf447152fcf89e355c334610d1632436ba170f738107266a71550", "0x0bcd1f91cf7bdd471d0a30c58c4706f3fdab3807a954b8f5b5e3bfec87d001bb"],
+      }
+      const noir = new Noir({ bytecode: noir_data.bytecode, abi: noir_data.abi as any });
+      const execResult = await noir.execute(input);
+      console.log("Witness Generated:", execResult);
 
-        const plonk = new UltraPlonkBackend(noir_data.bytecode, {threads: 2});
-        const {proof, publicInputs} = await plonk.generateProof(execResult.witness);
-        const vk = await plonk.getVerificationKey();
+      const plonk = new UltraPlonkBackend(noir_data.bytecode, { threads: 2 });
+      const { proof, publicInputs } = await plonk.generateProof(execResult.witness);
+      const vk = await plonk.getVerificationKey();
 
 
-      setProofResult({ proof: '0x'+Buffer.from(proof).toString('hex'), publicInputs });
+      setProofResult({ proof: '0x' + Buffer.from(proof).toString('hex'), publicInputs });
 
-    //   Send to backend for verification
+      //   Send to backend for verification
       const res = await fetch('/api/relayer', {
         method: 'POST',
         headers: {
@@ -56,6 +59,8 @@ export default function ProofComponent() {
 
       if (res.ok) {
         setVerificationStatus('✅ Proof verified successfully!');
+        console.log('Proof submission result:', data);
+        setData(JSON.stringify(data));
         if (data.txHash) {
           setTxHash(data.txHash);
         }
@@ -79,35 +84,28 @@ export default function ProofComponent() {
       {/* Inputs */}
       <div className="flex flex-col space-y-4 w-64 mb-6">
         <input
-          type="number"
-          placeholder="Enter value x"
-          value={x}
-          onChange={(e) => setX(e.target.value)}
+          type="text"
+          placeholder="Enter root"
+          value={root}
+          onChange={(e) => setRoot(e.target.value)}
           className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <input
-          type="number"
-          placeholder="Enter value y"
-          value={y}
-          onChange={(e) => setY(e.target.value)}
+          type="text"
+          placeholder="Enter user"
+          value={user}
+          onChange={(e) => setUser(e.target.value)}
           className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
-        <input
-          type="number"
-          placeholder="Enter value x * y"
-          value={result}
-          onChange={(e) => setResult(e.target.value)}
-          className="px-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+
       </div>
 
       {/* Generate Proof Button */}
       <button
         onClick={handleGenerateProof}
         disabled={isLoading}
-        className={`${
-          isLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
-        } text-white font-semibold px-6 py-2 rounded-lg`}
+        className={`${isLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
+          } text-white font-semibold px-6 py-2 rounded-lg`}
       >
         {isLoading ? 'Processing...' : 'Generate Proof'}
       </button>
@@ -142,6 +140,12 @@ export default function ProofComponent() {
         </div>
       )}
 
+      {data && (
+        <div className="mt-2 text-black-800 " style={{  overflowWrap: "break-word", width: "600px"}}>
+          {data}
+        </div>
+      )}
+
       {/* Output */}
       {proofResult && (
         <div className="mt-8 bg-white shadow-md p-4 rounded-lg w-full max-w-xl">
@@ -152,7 +156,7 @@ export default function ProofComponent() {
         </div>
       )}
 
-      
+
     </div>
   );
 }

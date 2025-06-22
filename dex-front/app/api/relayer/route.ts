@@ -1,26 +1,33 @@
 import axios from "axios";
 import { NextApiRequest, NextApiResponse } from "next";
 import { Buffer } from "buffer";
+import { NextRequest, NextResponse } from 'next/server'
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export async function Get(req: NextRequest) {
 
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method not allowed' });
-    }
+
+    // Traitement de la requête ici
+    return NextResponse.json({ status: 'ok' })
+}
+
+
+export async function POST(req: NextRequest) {
     try {
+        const body = await req.json();
         const API_URL = 'https://relayer-api.horizenlabs.io/api/v1';
 
-        const proofUint8 = new Uint8Array(Object.values(req.body.proof));
+        const proofUint8 = new Uint8Array(Object.values(body.proof));
 
         const params = {
             "proofType": "ultraplonk",
             "vkRegistered": false,
+            "chainId": 84532,
             "proofOptions": {
                 "numberOfPublicInputs": 2
             },
             "proofData": {
-                "proof": Buffer.from(concatenatePublicInputsAndProof(req.body.publicInputs, proofUint8)).toString("base64"),
-                "vk": req.body.vk
+                "proof": Buffer.from(concatenatePublicInputsAndProof(body.publicInputs, proofUint8)).toString("base64"),
+                "vk": body.vk
             }
         }
 
@@ -34,10 +41,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         while (true) {
             const jobStatusResponse = await axios.get(`${API_URL}/job-status/${process.env.API_KEY}/${requestResponse.data.jobId}`);
-            if (jobStatusResponse.data.status === "IncludedInBlock") {
-                console.log("Job Included in Block successfully");
-                res.status(200).json(jobStatusResponse.data);
-                return;
+            if (jobStatusResponse.data.status === "Aggregated") {
+                console.log("Job aggregated successfully");
+                console.log(jobStatusResponse.data);
+                return NextResponse.json(jobStatusResponse.data)
             } else {
                 console.log("Job status: ", jobStatusResponse.data.status);
                 console.log("Waiting for job to finalize...");

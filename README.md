@@ -1,3 +1,7 @@
-# amm-proof
+# Proof of liquidity
 
-Create your own pool with discount fee, you can choose to distrube coupoun code to your user use once or with unlimited duration
+Having liquidity only allows you to recover fees on the swap. What if we gave liquidity providers other privileges, such as a reduced fee on the different accounts the liquidity provider uses?
+
+Thanks to the zkproof, the liquidity provider will be able to obtain fee reductions on all his accounts, without his accounts disclosing which liquidity provider he corresponds to.
+
+
