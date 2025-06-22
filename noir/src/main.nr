@@ -1,72 +1,82 @@
-use dep::std::{self};
+use dep::std::{self, ops::Sub};
 
 fn main(
-    coupon: pub Field,
     root: pub Field,
     user: pub Field,
-    // for hackathon we pass the requester, in real scenario we need to veirify the requester by signature
-    requester:  Field,
-    witness:  Field,
-    secret0: Field,
-    secret1: Field,
+    // for hackathon we pass the requester, in real scenario we need to verify the requester by signature
+    requester: Field,
+    index: Field,
+    witness: [Field; 4]
 ) {
-    let hash_secret: Field = std::hash::hash_to_field([secret0, secret1]);
-    let expected_secret: Field = 0x29cc38a38450970d467f7e60428805a67bd687eff454e0cf8ef773ae2c210fe7;
-    assert(hash_secret == expected_secret, "Incorrect secret");
+    let calculated_root: Field = compute_merkle_root(requester, index, witness);
+    assert(calculated_root == root, "Incorrect root");
 
-    let hash_data: Field = std::hash::hash_to_field([user,  expected_secret]);
-    println(hash_data);
-    assert(hash_data == coupon, "Incorrect coupon");
+    assert(user != 0, "User cannot be zero");
+}
+
+fn compute_merkle_root(leaf: Field, index: Field, hash_path: [Field]) -> Field {
+    let n = hash_path.len();
+    let index_bits: [u1; 4] = index.to_le_bits();
+    let mut current = leaf;
+    for i in 0..n {
+        let path_bit = index_bits[i] as bool;
+        let (hash_left, hash_right) = if path_bit {
+            (hash_path[i], current)
+        } else {
+            (current, hash_path[i])
+        };
+
+        current = std::hash::pedersen_hash([hash_left, hash_right]);
+    }
+    current
 }
 
 #[test]
 fn test_main() {
-    let secret0= 1337;
-    let secret1: Field = 42;
-    let expected_secret: Field = std::hash::hash_to_field([1337, 42]);
+    let witness0 = std::hash::pedersen_hash([0, 0]);
+    let witness1 = std::hash::pedersen_hash([witness0, witness0]);
+    let witness2 = std::hash::pedersen_hash([witness1, witness1]);
+    let witness:[Field;4]= [0,witness0, witness1, witness2];
+    let user: Field = 0x0807C544D38aE7729f8798388d89Be6502A1e8A8;
+    let requester: Field = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    let root =getMerkleRoot(requester);
 
-    let user: Field = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    let once: Field = 1;
-    // 0,1% fees
-    let fee: Field = 100;
-
-    let coupon: Field = std::hash::hash_to_field([user, once, fee, expected_secret]);
-
-    main(coupon, user, once, fee, secret0, secret1);
-
-}
-
-#[test(should_fail_with = "Incorrect secret")]
-fn test_secret() {
-    let secret0= 1337;
-    let secret1: Field = 42;
-    let expected_secret: Field = std::hash::hash_to_field([secret0, secret1]);
-
-    let user: Field = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    let once: Field = 1;
-    // 0,1% fees
-    let fee: Field = 100;
-
-    let coupon: Field = std::hash::hash_to_field([user, once, fee, expected_secret]);
-
-    main(coupon, user, once, fee, 12, secret1);
-
+    main(root, user, requester, 0, witness);
 }
 
 
-#[test(should_fail_with = "Incorrect coupon")]
-fn test_coupon() {
-    let secret0= 1337;
-    let secret1: Field = 42;
-    let expected_secret: Field = std::hash::hash_to_field([13377, 42]);
+#[test(should_fail_with = "Incorrect root")]
+fn test_merkle() {
+      let witness:[Field;4]= [0,0,0,0];
+    let user: Field = 0x0807C544D38aE7729f8798388d89Be6502A1e8A8;
+    let requester: Field = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    let root =getMerkleRoot(requester);
 
-    let user: Field = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    let once: Field = 1;
-    // 0,1% fees
-    let fee: Field = 100;
+    main(root.sub(1), user, requester, 0, witness);
+}
 
-    let coupon: Field = std::hash::hash_to_field([user, 0, fee, expected_secret]);
+// not preety but just for test
+fn getMerkleRoot(user:Field) -> Field {
+     let mut level0: [Field; 16] = [0; 16];
+    level0[0] = user;
 
-    main(coupon, user, once, fee, secret0, secret1);
+    
+    let mut level1: [Field; 8] = [0; 8];
+    for i in 0..8 {
+        level1[i] = std::hash::pedersen_hash([level0[2 * i], level0[2 * i + 1]]);
+    }
 
+    let mut level2: [Field; 4] = [0; 4];
+    for i in 0..4 {
+        level2[i] = std::hash::pedersen_hash([level1[2 * i], level1[2 * i + 1]]);
+    }
+
+    let mut level3: [Field; 2] = [0; 2];
+    for i in 0..2 {
+        level3[i] = std::hash::pedersen_hash([level2[2 * i], level2[2 * i + 1]]);
+    }
+
+    let root: Field = std::hash::pedersen_hash([level3[0], level3[1]]);
+
+     root
 }
