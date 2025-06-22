@@ -111,7 +111,6 @@ contract Pool is IERC20 {
 
     function registerCoupon(
         address _user,
-        bytes32 _hash,
         uint256 _domainId,
         uint256 _aggregationId,
         bytes32[] calldata _merklePath,
@@ -119,14 +118,17 @@ contract Pool is IERC20 {
         uint256 _index
     ) external {
         require(!haveCoupon[_user], "already have coupon");
-        require(_hash != bytes32(0), "hash = 0");
 
+        bytes memory encodedInput = abi.encodePacked(
+            root,
+            uint256(uint160(_user))
+        );
         bytes32 leaf = keccak256(
             abi.encodePacked(
                 PROVING_SYSTEM_ID,
                 vkey,
                 VERSION_HASH,
-                keccak256(abi.encodePacked(_hash))
+                keccak256(encodedInput)
             )
         );
 
